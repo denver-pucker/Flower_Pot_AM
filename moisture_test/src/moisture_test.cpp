@@ -24,6 +24,7 @@ AirQualitySensor sensor(A0);
 // const int DUSTPIN = A1;
 const int WATERPIN = A2;
 const int MOISTUREPIN = A5;
+const int PUMPMOTOR = D19;
 
 
 int value;          // stores returned value
@@ -55,6 +56,8 @@ Adafruit_MQTT_SPARK mqtt(&TheClient,AIO_SERVER,AIO_SERVERPORT,AIO_USERNAME,AIO_K
 Adafruit_MQTT_Publish aqPub = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/airquality");
 // Adafruit_MQTT_Publish dustPub = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/dustquality");
 Adafruit_MQTT_Publish waterLevel = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/waterlevel");
+Adafruit_MQTT_Publish moistureLevel = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/moisturelevel");
+
 
 // Display setup
 Adafruit_SSD1306 display(OLED_RESET);
@@ -69,6 +72,7 @@ bool MQTT_ping();
 
 // Let Device OS manage the connection to the Particle Cloud
 SYSTEM_MODE(AUTOMATIC);
+SYSTEM_THREAD(ENABLED);
 
 // setup() runs once, when the device is first turned on
 void setup() {
@@ -104,6 +108,8 @@ void setup() {
   // setup pin modes
   // pinMode(DUSTPIN,INPUT);
   pinMode(WATERPIN,INPUT);
+  pinMode(MOISTUREPIN,INPUT);
+  pinMode(PUMPMOTOR,OUTPUT);
 
   // timing
   // dustStartTime = millis();
@@ -121,30 +127,36 @@ void loop() {
 
     // Read Moisture
     moistRead=analogRead(MOISTUREPIN);
-    Serial.printf("Moisture = %d @ %s\n",moistRead,timeOnly.c_str());
+    if ( moistRead > 3000){
+      digitalWrite(PUMPMOTOR,HIGH);
+      Serial.printf("Turning on Pump Motor for 1 second\n");
+      delay(1000);
+      digitalWrite(PUMPMOTOR,LOW);
+      Serial.printf("Turning off Pump Motor");
+    }
+    Serial.printf("Moisture = %d \n%s\n",moistRead,timeOnly.c_str());
 
     // Display to OLED
     display.clearDisplay();
     display.setTextSize(2);
     display.setTextColor(WHITE);
     display.setCursor(0,0);
-    display.printf("MOISTURE\n%d\n@\nTIME:%s\n",moistRead,timeOnly.c_str());
+    display.printf("MOISTURE\n%d\nTIME:%s",moistRead,timeOnly.c_str());
     display.display();
-    delay(1000);
-  }
+    delay(3000);
+
   // Water level sensor
-  if((millis()-lastTime > 10000)) {
     waterLevelInd = analogRead(WATERPIN);
     Serial.printf("Water Level: %i\n",waterLevelInd);
 
-        // Display to OLED
-        display.clearDisplay();
-        display.setTextSize(2);
-        display.setTextColor(WHITE);
-        display.setCursor(0,0);
-        display.printf("Water Level\n%d\n@\nTIME:%s\n",waterLevelInd,timeOnly.c_str());
-        display.display();
-        delay(1000);
+    // Display to OLED
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(WHITE);
+    display.setCursor(0,0);
+    display.printf("Water\nLevel\n%i\nTIME:%s",waterLevelInd,timeOnly.c_str());
+    display.display();
+    delay(3000);
   }
 
   // Dust sensor
@@ -167,22 +179,54 @@ void loop() {
   
   if (slopeQuality == AirQualitySensor::FORCE_SIGNAL) {
     Serial.printf("High pollution! Force signal active.\n");
+        // Display to OLED
+        display.clearDisplay();
+        display.setTextSize(2);
+        display.setTextColor(WHITE);
+        display.setCursor(0,0);
+        display.printf("RUN!!\nAir is\nBAD!");
+        display.display();
+        delay(3000);
   }
   else if (slopeQuality == AirQualitySensor::HIGH_POLLUTION) {
     Serial.printf("High pollution!\n");
+        // Display to OLED
+        display.clearDisplay();
+        display.setTextSize(2);
+        display.setTextColor(WHITE);
+        display.setCursor(0,0);
+        display.printf("Hight\nAir\nPolution");
+        display.display();
+        delay(3000);
   }
   else if (slopeQuality == AirQualitySensor::LOW_POLLUTION) {
     Serial.printf("Low pollution!\n");
+        // Display to OLED
+        display.clearDisplay();
+        display.setTextSize(2);
+        display.setTextColor(WHITE);
+        display.setCursor(0,0);
+        display.printf("Low\nAir\nPolution");
+        display.display();
+        delay(3000);
   }
   else if (slopeQuality == AirQualitySensor::FRESH_AIR) {
     Serial.printf("Fresh air.\n");
+        // Display to OLED
+        display.clearDisplay();
+        display.setTextSize(2);
+        display.setTextColor(WHITE);
+        display.setCursor(0,0);
+        display.printf("Air\nIs\nGreat!");
+        display.display();
+        delay(3000);
   }
-  delay(1000);
+  delay(3000);
 
   if((millis()-lastTime > 10000)) {
     if(mqtt.Update()) {
       aqPub.publish(airQuality);
-      // dustPub.publish(realConcentration);
+      moistureLevel.publish(moistRead);
       waterLevel.publish(waterLevelInd);
       // Serial.printf("Air Quality: %i Dust: %f Water Level: %i\n",airQuality, realConcentration,waterLevelInd
       Serial.printf("Air Quality: %i Water Level: %i\n",airQuality,waterLevelInd);
@@ -194,18 +238,18 @@ void loop() {
     display.setTextSize(2);
     display.setTextColor(WHITE);
     display.setCursor(0,0);
-    display.printf("Air Quality\n%i\n@\nTIME:%s\n",airQuality,timeOnly.c_str());
+    display.printf("Air Qlty\n%i\nTIME:%s\n",airQuality,timeOnly.c_str());
     display.display();
-    delay(1000);
+    delay(3000);
 
     // Display to OLED Water Level
     display.clearDisplay();
     display.setTextSize(2);
     display.setTextColor(WHITE);
     display.setCursor(0,0);
-    display.printf("Water Level\n%i\n@\nTIME:%s\n",waterLevelInd,timeOnly.c_str());
+    display.printf("Water Lvl\n%i\n@\nTIME:%s\n",waterLevelInd,timeOnly.c_str());
     display.display();
-    delay(1000);
+    delay(3000);
   }
 }
 
