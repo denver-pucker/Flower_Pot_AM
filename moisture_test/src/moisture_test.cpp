@@ -6,6 +6,7 @@
 
 // Include Particle Device OS APIs
 #include "Particle.h"
+#include "Adafruit_BME280.h"
 #include "Air_Quality_Sensor.h"
 #include <Adafruit_MQTT.h>
 #include "Adafruit_MQTT/Adafruit_MQTT_SPARK.h"
@@ -19,6 +20,9 @@ const int LOGO16_GLCD_HEIGHT=64;
 const int LOGO16_GLCD_WIDTH=128;
 const int XPOS = 0;
 const int YPOS = 1;
+const int TEMPFREQ = 10000;
+const int MOISTFREQ = 30000;
+const int BME=0x76;
 
 AirQualitySensor sensor(A0);
 // const int DUSTPIN = A1;
@@ -33,6 +37,13 @@ int slopeQuality;   // stores defied slope of grove aqs sensor
 // int dust;           // dust value returned
 int waterLevelInd;  // water level low detection
 int moistRead;      // moisture reading
+int butValue;       // get button info
+
+// BME 
+float tempC, tempF;
+float pressPA;
+float humidRH;
+bool status;
 
 
 // Dust sensor var
@@ -53,14 +64,19 @@ TCPClient TheClient;
  
 Adafruit_MQTT_SPARK mqtt(&TheClient,AIO_SERVER,AIO_SERVERPORT,AIO_USERNAME,AIO_KEY); 
 
+Adafruit_MQTT_Subscribe buttonFeed = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/buttononoff"); 
 Adafruit_MQTT_Publish aqPub = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/airquality");
 // Adafruit_MQTT_Publish dustPub = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/dustquality");
 Adafruit_MQTT_Publish waterLevel = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/waterlevel");
 Adafruit_MQTT_Publish moistureLevel = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/moisturelevel");
 
 
+
 // Display setup
 Adafruit_SSD1306 display(OLED_RESET);
+
+// BME
+Adafruit_BME280 bme;
 
 #if (SSD1306_LCDHEIGHT != 64)
 #error("Height incorrect, please fix Adafruit_SSD1306.h!");
@@ -69,6 +85,8 @@ Adafruit_SSD1306 display(OLED_RESET);
 /************Declare Functions*************/
 void MQTT_connect();
 bool MQTT_ping();
+float getTemp(int timeInterval);
+int getMoisture(int probePin, int timeInterval);
 
 // Let Device OS manage the connection to the Particle Cloud
 SYSTEM_MODE(AUTOMATIC);
@@ -97,6 +115,11 @@ void setup() {
     Serial.printf("Sensor Error\n");
   }
 
+  status = bme.begin(BME);
+  if (status == false) {
+    Serial.printf("BME280 at address 0x%02x failed to start\n", BME);
+  }
+
   // Connect to Internet but not Particle Cloud
   WiFi.on();
   WiFi.connect();
@@ -114,9 +137,31 @@ void setup() {
   // timing
   // dustStartTime = millis();
   waterStartTime = millis();
+
+  // Setup MQTT button for pump
+  mqtt.subscribe(&buttonFeed);
+
 }
 
 void loop() {
+  // get button on/off from adafruit.io 
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(100))) {
+    if (subscription == &buttonFeed) {
+      butValue = atoi((char *)buttonFeed.lastread);
+      Serial.printf("buttonFeed = %i\n",butValue); 
+      if (butValue) {
+        Serial.printf("Turning on pump\n"); 
+        digitalWrite(PUMPMOTOR,HIGH);
+        delay(1000);
+        digitalWrite(PUMPMOTOR,LOW);
+      }
+      if (!butValue) {
+        Serial.printf("Turning off pump\n"); 
+        digitalWrite(PUMPMOTOR,LOW);
+      }
+    }
+  }
 
   // soil moisture reading
   dateTime = Time.timeStr(); //Current Date and Time from Particle Time class 
@@ -288,4 +333,28 @@ bool MQTT_ping() {
       last = millis();
   }
   return pingStatus;
+}
+
+float getTemp(int timeInterval) {
+  int currentTime;
+  static int lastTime = -999999;
+  static float data;
+
+  currentTime = millis();
+  if(currentTime - lastTime > timeInterval) {
+    lastTime = millis();
+    data = bme.readTemperature();
+  }
+  return data;
+}
+
+int getMoisture(int probePin, int timeInterval) {
+  static int lastTime = -999999;
+  static int data;
+
+  if(millis() - lastTime > timeInterval) {
+    lastTime = millis();
+    data = analogRead(probePin);
+  }
+  return data;
 }
